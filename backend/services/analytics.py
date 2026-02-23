@@ -46,7 +46,15 @@ def get_total_daily_cost_trend(db: Session, start_date: date, end_date: date) ->
 
 
 def _comprehensive_daily_cost(asset: Asset, target_date: date = None) -> Decimal:
-    """综合每日成本：取 daily_cost 和 estimated_daily_cost 中较小的那个"""
+    """综合每日成本：
+    1) 在用资产若实际使用天数超过预计使用天数，则为 0
+    2) 否则取 daily_cost 和 estimated_daily_cost 中较小值
+    """
+    if asset.status != "disposed" and asset.expected_days:
+        days_used = calc_days_used(asset, target_date)
+        if days_used > asset.expected_days:
+            return Decimal("0")
+
     actual = calc_daily_cost(asset, target_date)
     estimated = calc_estimated_daily_cost(asset)
     if estimated is not None and actual > estimated:

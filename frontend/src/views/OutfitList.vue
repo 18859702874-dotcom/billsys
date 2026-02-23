@@ -66,7 +66,14 @@
       </div>
     </div>
 
-    <div v-if="!outfits.length" class="empty-state">
+    <div v-if="loading && !hasLoadedOnce" class="empty-state">
+      <svg class="loading-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="34" height="34">
+        <path d="M21 12a9 9 0 10-3.2 6.9"/>
+      </svg>
+      <p>搭配加载中...</p>
+    </div>
+
+    <div v-else-if="!loading && hasLoadedOnce && !outfits.length" class="empty-state">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">
         <rect x="3" y="3" width="7" height="7" rx="1"/>
         <rect x="14" y="3" width="7" height="7" rx="1"/>
@@ -79,22 +86,63 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getOutfits, deleteOutfit } from '../api'
 
+function getOutfitListCacheStore() {
+  if (typeof window === 'undefined') {
+    return { paramsKey: '', data: null }
+  }
+  if (!window.__BILLSYS_OUTFIT_LIST_CACHE__) {
+    window.__BILLSYS_OUTFIT_LIST_CACHE__ = { paramsKey: '', data: null }
+  }
+  return window.__BILLSYS_OUTFIT_LIST_CACHE__
+}
+
 const outfits = ref([])
+const loading = ref(false)
+const hasLoadedOnce = ref(false)
 const filters = ref({ occasion: null, season: null })
+let loadRequestToken = 0
+let pendingRefreshAfterLoad = false
 
 const occasionOptions = ['日常', '通勤', '运动', '约会', '正式']
 const seasonOptions = ['春', '夏', '秋', '冬', '四季']
 
 async function load() {
+  const currentToken = ++loadRequestToken
   const params = {}
   if (filters.value.occasion) params.occasion = filters.value.occasion
   if (filters.value.season) params.season = filters.value.season
-  const res = await getOutfits(params)
-  outfits.value = res.data
+  const paramsKey = JSON.stringify(params)
+  const cacheStore = getOutfitListCacheStore()
+
+  if (!hasLoadedOnce.value && cacheStore.paramsKey === paramsKey && Array.isArray(cacheStore.data)) {
+    outfits.value = cacheStore.data
+    hasLoadedOnce.value = true
+  }
+
+  loading.value = true
+  try {
+    const res = await getOutfits(params)
+    if (currentToken !== loadRequestToken) return
+    const next = Array.isArray(res.data) ? res.data : []
+    outfits.value = next
+    cacheStore.paramsKey = paramsKey
+    cacheStore.data = next
+  } catch (err) {
+    if (currentToken !== loadRequestToken) return
+    ElMessage.error(err?.response?.data?.detail || '搭配列表加载失败，请稍后重试')
+  } finally {
+    if (currentToken !== loadRequestToken) return
+    loading.value = false
+    hasLoadedOnce.value = true
+    if (pendingRefreshAfterLoad) {
+      pendingRefreshAfterLoad = false
+      load()
+    }
+  }
 }
 
 async function handleDelete(id) {
@@ -103,7 +151,27 @@ async function handleDelete(id) {
   load()
 }
 
-onMounted(load)
+function onOutfitChanged() {
+  if (loading.value) {
+    pendingRefreshAfterLoad = true
+    return
+  }
+  load()
+}
+
+onMounted(() => {
+  load()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('outfit:changed', onOutfitChanged)
+  }
+})
+
+onBeforeUnmount(() => {
+  pendingRefreshAfterLoad = false
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('outfit:changed', onOutfitChanged)
+  }
+})
 </script>
 
 <style scoped>
@@ -275,6 +343,14 @@ onMounted(load)
   padding: 80px 0;
   color: var(--text-muted);
 }
+.loading-spin {
+  animation: spin 1s linear infinite;
+}
 .empty-state svg { margin-bottom: 16px; opacity: 0.5; }
 .empty-state p { font-size: 14px; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 </style>

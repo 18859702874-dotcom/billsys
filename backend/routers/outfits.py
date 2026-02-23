@@ -124,25 +124,33 @@ def _guess_mime_from_url(image_url: str) -> str:
     return mime or "image/jpeg"
 
 
+def _read_local_image_sync(local_path: str, image_url: str) -> tuple[bytes, str]:
+    if not os.path.exists(local_path):
+        raise HTTPException(400, f"图片不存在: {image_url}")
+    with open(local_path, "rb") as f:
+        data = f.read()
+    if not data:
+        raise HTTPException(400, f"图片为空: {image_url}")
+    return data, _guess_mime_from_url(image_url)
+
+
+def _read_r2_image_sync(object_key: str, image_url: str) -> tuple[bytes, str]:
+    obj = get_object_stream(object_key)
+    body = obj["Body"].read()
+    if not body:
+        raise HTTPException(400, f"图片为空: {image_url}")
+    content_type = obj.get("ContentType") or _guess_mime_from_url(image_url)
+    return body, content_type
+
+
 async def _load_source_image(image_url: str) -> tuple[bytes, str]:
     if image_url.startswith("/uploads/"):
         local_path = os.path.join(BASE_DIR, image_url.lstrip("/"))
-        if not os.path.exists(local_path):
-            raise HTTPException(400, f"图片不存在: {image_url}")
-        with open(local_path, "rb") as f:
-            data = f.read()
-        if not data:
-            raise HTTPException(400, f"图片为空: {image_url}")
-        return data, _guess_mime_from_url(image_url)
+        return await asyncio.to_thread(_read_local_image_sync, local_path, image_url)
 
     if image_url.startswith(MEDIA_PREFIX):
         object_key = unquote(image_url[len(MEDIA_PREFIX):])
-        obj = get_object_stream(object_key)
-        body = obj["Body"].read()
-        if not body:
-            raise HTTPException(400, f"图片为空: {image_url}")
-        content_type = obj.get("ContentType") or _guess_mime_from_url(image_url)
-        return body, content_type
+        return await asyncio.to_thread(_read_r2_image_sync, object_key, image_url)
 
     if image_url.startswith("http://") or image_url.startswith("https://"):
         async with httpx.AsyncClient(timeout=20) as client:
@@ -261,7 +269,8 @@ async def render_outfit_image(data: OutfitRenderRequest):
     response_data, used_model = await _call_gemini_image_with_retry(payload, api_key, models)
     image_bytes, image_mime, text = _extract_generated_image(response_data)
     ext = mimetypes.guess_extension(image_mime) or ".png"
-    image_url = upload_bytes(
+    image_url = await asyncio.to_thread(
+        upload_bytes,
         folder="outfits/ai",
         filename=f"rendered_outfit{ext}",
         data=image_bytes,

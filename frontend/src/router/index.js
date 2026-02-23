@@ -16,6 +16,10 @@ const routes = [
   { path: '/outfits/new', name: 'OutfitNew', component: () => import('../views/OutfitEditor.vue') },
   { path: '/outfits/:id/edit', name: 'OutfitEdit', component: () => import('../views/OutfitEditor.vue') },
   { path: '/tryon', name: 'TryOn', component: () => import('../views/TryOn.vue') },
+  // Bills module
+  { path: '/bills', name: 'BillList', component: () => import('../views/BillList.vue') },
+  { path: '/bills/new', name: 'BillNew', component: () => import('../views/BillForm.vue') },
+  { path: '/bills/:id/edit', name: 'BillEdit', component: () => import('../views/BillForm.vue') },
 ]
 
 export default createRouter({

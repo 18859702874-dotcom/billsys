@@ -208,6 +208,10 @@ const estimatedDailyCostText = computed(() => {
 
 const statusText = computed(() => (form.value.status === 'disposed' ? '已弃用' : '使用中'))
 
+function asQueryText(value) {
+  return Array.isArray(value) ? value[0] : value
+}
+
 async function loadCategories(preferName = '') {
   try {
     const res = await getCategories()
@@ -300,7 +304,9 @@ async function submit() {
 }
 
 function goBack() {
-  if (route.query.from === 'cards') {
+  if (route.query.from === 'bill') {
+    router.push('/bills')
+  } else if (route.query.from === 'cards') {
     router.push('/assets?view=cards')
   } else if (window.history.state?.back) {
     router.back()
@@ -309,11 +315,41 @@ function goBack() {
   }
 }
 
+function applyBillPrefill() {
+  if (route.query.from !== 'bill' || isEdit.value) return
+
+  const amountText = asQueryText(route.query.amount)
+  const amount = Number(amountText)
+  if (!isNaN(amount) && amount > 0) {
+    form.value.purchase_price = Number(amount.toFixed(2))
+  }
+
+  const dateText = asQueryText(route.query.purchase_date)
+  if (dateText && /^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
+    form.value.purchase_date = dateText
+  }
+
+  const categoryText = asQueryText(route.query.category_id)
+  const categoryId = Number(categoryText)
+  if (!isNaN(categoryId) && categories.value.some((c) => c.id === categoryId)) {
+    form.value.category_id = categoryId
+  }
+
+  const notesText = asQueryText(route.query.notes)
+  if (notesText && !form.value.notes) {
+    form.value.notes = notesText
+  }
+
+  ElMessage.info('已自动带入记账信息，请确认后保存资产')
+}
+
 onMounted(async () => {
   await loadCategories()
   if (isEdit.value) {
     const r = await getAsset(route.params.id)
     Object.assign(form.value, r.data)
+  } else {
+    applyBillPrefill()
   }
 })
 </script>
@@ -721,5 +757,4 @@ onMounted(async () => {
   }
 }
 </style>
-
 

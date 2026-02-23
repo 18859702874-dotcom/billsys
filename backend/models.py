@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, Numeric, Text, ForeignKey, func
+from sqlalchemy import Boolean, Column, Integer, String, Date, DateTime, Numeric, Text, ForeignKey, func
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -9,8 +9,18 @@ class AssetCategory(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(50), nullable=False, unique=True)
     daily_budget = Column(Numeric(10, 2), nullable=True)
+    parent_id = Column(Integer, ForeignKey("asset_categories.id"), nullable=True)
+    sort_order = Column(Integer, default=0, nullable=False)
+    is_asset_related = Column(Boolean, default=False, nullable=False)
 
     assets = relationship("Asset", back_populates="category")
+    transactions = relationship("Transaction", back_populates="category")
+    children = relationship(
+        "AssetCategory",
+        primaryjoin="AssetCategory.parent_id == AssetCategory.id",
+        foreign_keys="[AssetCategory.parent_id]",
+        order_by="AssetCategory.sort_order",
+    )
 
 
 class Asset(Base):
@@ -33,6 +43,22 @@ class Asset(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     category = relationship("AssetCategory", back_populates="assets")
+
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    type = Column(String(10), nullable=False)  # expense / income
+    category_id = Column(Integer, ForeignKey("asset_categories.id"), nullable=True)
+    date = Column(Date, nullable=False)
+    payment_method = Column(String(20), nullable=True)  # 微信/支付宝/信用卡/现金/其他
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    category = relationship("AssetCategory", back_populates="transactions")
 
 
 class ClothingItem(Base):

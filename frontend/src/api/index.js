@@ -4,9 +4,17 @@ const api = axios.create({ baseURL: '/api' })
 
 // --- Categories ---
 export const getCategories = () => api.get('/categories')
+export const getCategoriesTree = () => api.get('/categories/tree')
 export const createCategory = (data) => api.post('/categories', data)
 export const updateCategory = (id, data) => api.put(`/categories/${id}`, data)
 export const deleteCategory = (id) => api.delete(`/categories/${id}`)
+
+// --- Transactions ---
+export const getTransactions = (params) => api.get('/transactions', { params })
+export const createTransaction = (data) => api.post('/transactions', data)
+export const updateTransaction = (id, data) => api.put(`/transactions/${id}`, data)
+export const deleteTransaction = (id) => api.delete(`/transactions/${id}`)
+export const getTransactionSummary = (params) => api.get('/transactions/summary', { params })
 
 // --- Assets ---
 export const getAssets = (params) => api.get('/assets', { params })

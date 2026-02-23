@@ -56,7 +56,7 @@
           <h2>部位搭配台</h2>
           <div class="stage-actions">
             <button class="mini-btn" @click="autoFillSlots">一键填充</button>
-            <button class="mini-btn mini-btn-primary" @click="generateOutfitRender" :disabled="generatingRender || !placedCount">
+            <button class="mini-btn mini-btn-primary" @click="generateOutfitRender" :disabled="generatingRender || saving || !placedCount">
               {{ generatingRender ? '生成中...' : 'AI生成整身图' }}
             </button>
             <button class="mini-btn" @click="clearSlots" :disabled="!placedCount">清空</button>
@@ -192,7 +192,10 @@
 
         <div class="render-block">
           <div class="summary-title">AI 整身图</div>
-          <div v-if="generatingRender" class="render-status">正在调用 Gemini 生成，请稍候...</div>
+          <div v-if="generatingRender" class="render-status">
+            正在调用 Gemini 生成，请稍候...
+            <div v-if="savedDuringRendering" class="summary-tip">基础搭配已保存，生成完成后会自动补齐整身图。</div>
+          </div>
           <div v-else-if="renderedImageUrl" class="render-preview">
             <img :src="renderedImageUrl" alt="AI生成整身图" />
             <div class="render-meta">
@@ -205,7 +208,9 @@
         </div>
 
         <div class="editor-actions">
-          <button class="btn-primary" @click="handleSave" :disabled="saving">{{ saving ? '保存中...' : '保存搭配' }}</button>
+          <button class="btn-primary" @click="handleSave" :disabled="saving">
+            {{ saving ? '保存中...' : (generatingRender ? '生成中，点击后自动保存' : '保存搭配') }}
+          </button>
           <button class="btn-secondary" @click="$router.back()">取消</button>
         </div>
       </aside>
@@ -214,14 +219,15 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createOutfit, getClothingList, getOutfit, renderOutfitImage, updateOutfit } from '../api'
 
 const route = useRoute()
 const router = useRouter()
-const isEdit = computed(() => !!route.params.id)
+const currentOutfitId = ref(route.params.id ? Number(route.params.id) : null)
+const isEdit = computed(() => !!currentOutfitId.value)
 
 const saving = ref(false)
 const generatingRender = ref(false)
@@ -232,8 +238,36 @@ const selectedSlot = ref('top')
 const renderedImageUrl = ref('')
 const renderedModel = ref('')
 const renderedText = ref('')
+const savedDuringRendering = ref(false)
 
 const allWardrobeItems = ref([])
+let renderRequestToken = 0
+let isComponentActive = true
+let renderImagePatchTargetId = null
+let activeSavePromise = null
+
+function notifyOutfitChanged() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent('outfit:changed'))
+}
+
+function upsertOutfitListCache(outfit) {
+  if (typeof window === 'undefined' || !outfit?.id) return
+  const key = '{}'
+  const cache = window.__BILLSYS_OUTFIT_LIST_CACHE__ || { paramsKey: key, data: [] }
+  const prev = Array.isArray(cache.data) ? cache.data : []
+  const next = [...prev]
+  const idx = next.findIndex((row) => row?.id === outfit.id)
+  if (idx >= 0) {
+    next[idx] = outfit
+  } else {
+    next.unshift(outfit)
+  }
+  window.__BILLSYS_OUTFIT_LIST_CACHE__ = {
+    paramsKey: key,
+    data: next,
+  }
+}
 
 const form = ref({
   name: '',
@@ -441,27 +475,57 @@ async function generateOutfitRender() {
     return
   }
 
+  savedDuringRendering.value = false
+  renderImagePatchTargetId = null
+  const currentToken = ++renderRequestToken
   generatingRender.value = true
   try {
     const res = await renderOutfitImage({
       items,
       prompt: form.value.notes || undefined,
     })
-    renderedImageUrl.value = res.data.image_url || ''
-    renderedModel.value = res.data.model || '-'
-    renderedText.value = (res.data.text || '').slice(0, 200)
-    const saved = await persistOutfit({
-      requireName: false,
-      autoNameIfMissing: true,
-      navigateToList: false,
-      successMessage: 'AI 整身图已生成并自动保存',
-    })
-    if (!saved) return
+    if (currentToken !== renderRequestToken) return
+
+    if (activeSavePromise) {
+      await activeSavePromise.catch(() => null)
+      if (currentToken !== renderRequestToken) return
+    }
+
+    const nextRenderedImageUrl = res.data.image_url || ''
+    const nextRenderedModel = res.data.model || '-'
+    const nextRenderedText = (res.data.text || '').slice(0, 200)
+    if (isComponentActive) {
+      renderedImageUrl.value = nextRenderedImageUrl
+      renderedModel.value = nextRenderedModel
+      renderedText.value = nextRenderedText
+    }
+
+    const patchTargetId = renderImagePatchTargetId || currentOutfitId.value || null
+    if (patchTargetId) {
+      const patchRes = await updateOutfit(patchTargetId, {
+        rendered_image_url: nextRenderedImageUrl || null,
+      })
+      if (patchRes?.data?.id) {
+        currentOutfitId.value = patchRes.data.id
+        upsertOutfitListCache(patchRes.data)
+      }
+      notifyOutfitChanged()
+      if (isComponentActive) {
+        ElMessage.success('AI 整身图已生成并自动更新')
+      }
+      return
+    }
+    if (isComponentActive) {
+      ElMessage.success('AI 整身图已生成，请点击“保存搭配”完成落库')
+    }
   } catch (err) {
+    if (currentToken !== renderRequestToken) return
     const msg = err?.response?.data?.detail || 'AI 整身图生成失败'
     ElMessage.error(msg)
   } finally {
-    generatingRender.value = false
+    if (currentToken === renderRequestToken && isComponentActive) {
+      generatingRender.value = false
+    }
   }
 }
 
@@ -571,18 +635,23 @@ async function persistOutfit({
 
     let saved = null
     if (isEdit.value) {
-      const res = await updateOutfit(route.params.id, payload)
+      const res = await updateOutfit(currentOutfitId.value, payload)
       saved = res.data
     } else {
       const res = await createOutfit(payload)
       saved = res.data
-      if (!navigateToList && saved?.id) {
+      if (saved?.id) {
+        currentOutfitId.value = saved.id
+      }
+      if (!navigateToList && saved?.id && isComponentActive) {
         await router.replace(`/outfits/${saved.id}/edit`)
       }
     }
 
     ElMessage.success(successMessage)
-    if (navigateToList) {
+    upsertOutfitListCache(saved)
+    notifyOutfitChanged()
+    if (navigateToList && isComponentActive) {
       router.push('/outfits')
     }
     return saved
@@ -596,19 +665,39 @@ async function persistOutfit({
 }
 
 async function handleSave() {
-  await persistOutfit({
+  const saveOptions = {
     requireName: true,
     autoNameIfMissing: false,
     navigateToList: true,
     successMessage: isEdit.value ? '更新成功' : '创建成功',
-  })
+  }
+
+  const wasGenerating = generatingRender.value
+  const savePromise = persistOutfit(saveOptions)
+  activeSavePromise = savePromise
+  const saved = await savePromise
+  if (activeSavePromise === savePromise) {
+    activeSavePromise = null
+  }
+  if (!saved) return
+
+  if (wasGenerating) {
+    renderImagePatchTargetId = saved.id || currentOutfitId.value || null
+    savedDuringRendering.value = !!renderImagePatchTargetId
+    ElMessage.info('基础搭配已保存，整身图生成后会自动补齐')
+  }
 }
+
+onBeforeUnmount(() => {
+  isComponentActive = false
+  activeSavePromise = null
+})
 
 onMounted(async () => {
   await loadWardrobe()
 
   if (!isEdit.value) return
-  const res = await getOutfit(route.params.id)
+  const res = await getOutfit(currentOutfitId.value)
   const data = res.data
   form.value = {
     name: data.name || '',

@@ -6,7 +6,7 @@
         <div class="header-main">
           <span class="module-tag">Category</span>
           <h3 class="module-title">分类管理</h3>
-          <p class="module-desc">维护资产分类，可为每个分类设置每日预算，供资产录入和筛选使用。</p>
+          <p class="module-desc">维护两级分类体系，资产与记账共用。一级为大类，二级为细分。</p>
 
           <div class="kpi-row">
             <div class="kpi-chip">
@@ -16,8 +16,8 @@
                 </svg>
               </div>
               <div class="kpi-body">
-                <strong class="kpi-num">{{ totalCategoryCount }}</strong>
-                <span class="kpi-label">分类总数</span>
+                <strong class="kpi-num">{{ l1Categories.length }}</strong>
+                <span class="kpi-label">一级分类</span>
               </div>
             </div>
 
@@ -28,12 +28,20 @@
                 </svg>
               </div>
               <div class="kpi-body">
-                <strong class="kpi-num">{{ totalAssetLinkedCount }}</strong>
-                <span class="kpi-label">已关联资产</span>
+                <strong class="kpi-num">{{ l2TotalCount }}</strong>
+                <span class="kpi-label">二级分类</span>
               </div>
             </div>
 
-            <div class="kpi-chip">
+            <div
+              class="kpi-chip kpi-chip-clickable"
+              :class="{ active: budgetOnly }"
+              role="button"
+              tabindex="0"
+              @click="toggleBudgetOnly"
+              @keydown.enter.prevent="toggleBudgetOnly"
+              @keydown.space.prevent="toggleBudgetOnly"
+            >
               <div class="kpi-icon-box" style="--kpi-color: #10b981; --kpi-bg: rgba(16,185,129,0.1)">
                 <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
                   <path fill-rule="evenodd" d="M8 1a7 7 0 100 14A7 7 0 008 1zm-.5 4.5a.5.5 0 011 0v.612c.61.152 1.25.586 1.25 1.388 0 .77-.574 1.23-1.25 1.4v1.6c.39-.102.625-.324.625-.625a.5.5 0 011 0c0 .905-.737 1.48-1.625 1.609V11.5a.5.5 0 01-1 0v-.516C6.637 10.83 6 10.264 6 9.5c0-.77.574-1.23 1.25-1.4V6.5c-.39.102-.625.324-.625.625a.5.5 0 01-1 0c0-.905.737-1.48 1.625-1.609V5.5z" clip-rule="evenodd"/>
@@ -41,96 +49,131 @@
               </div>
               <div class="kpi-body">
                 <strong class="kpi-num">{{ budgetConfiguredCount }}</strong>
-                <span class="kpi-label">已设置预算</span>
+                <span class="kpi-label">{{ budgetOnly ? '仅已设预算' : '已设置预算' }}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <button class="btn-primary" @click="handleAddCategory">
-          <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
-            <path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z"/>
-          </svg>
-          新建分类
-        </button>
+        <div class="header-actions">
+          <button class="btn-secondary" @click="handleAddCategory(null)">
+            <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+              <path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z"/>
+            </svg>
+            新建一级分类
+          </button>
+          <button class="btn-primary" @click="handleAddCategory(selectedL1Id)">
+            <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+              <path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z"/>
+            </svg>
+            新建子分类
+          </button>
+        </div>
       </div>
 
-      <div class="table-wrap" v-loading="loading">
-        <table class="data-table" v-if="categories.length">
-          <thead>
-            <tr>
-              <th class="order-col">#</th>
-              <th class="name-col">分类名称</th>
-              <th class="qty-col">资产数量</th>
-              <th class="budget-col">日预算（元/天）</th>
-              <th class="actions-col">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(cat, idx) in categories" :key="cat.id">
-              <td class="order-col">
-                <span class="order-badge">{{ idx + 1 }}</span>
-              </td>
-              <td class="name-col">
-                <div class="cat-name-row">
-                  <span class="cat-dot" :style="{ background: getCategoryColor(cat.name) }"></span>
-                  <span class="cat-name">{{ cat.name }}</span>
-                </div>
-              </td>
-              <td class="qty-col">
-                <span class="count-badge" :class="{ active: usageCount(cat.id) > 0 }">
-                  {{ usageCount(cat.id) }} 项
-                </span>
-              </td>
-              <td class="budget-col">
-                <span v-if="hasBudget(cat)" class="budget-badge">
-                  ¥{{ formatBudget(cat.daily_budget) }}<span class="budget-unit">/天</span>
-                </span>
-                <span v-else class="no-budget">未设置</span>
-              </td>
-              <td class="actions-col">
-                <div class="action-btns">
-                  <button class="action-btn" @click="handleRenameCategory(cat)">
-                    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" width="12" height="12">
-                      <path d="M9.5 1.5L12.5 4.5L5 12H2V9L9.5 1.5Z" stroke-linejoin="round"/>
-                    </svg>
-                    重命名
-                  </button>
-                  <button class="action-btn budget" @click="handleSetBudget(cat)">
-                    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" width="12" height="12">
-                      <circle cx="7" cy="7" r="5.5"/>
-                      <path d="M7 3.5v.5m0 6v.5M5.5 5.5C5.5 4.67 6.17 4 7 4s1.5.67 1.5 1.5S7.83 7 7 7s-1.5.67-1.5 1.5S6.17 10 7 10s1.5-.67 1.5-1.5" stroke-linecap="round"/>
-                    </svg>
-                    预算
-                  </button>
-                  <button class="action-btn danger" @click="handleDeleteCategory(cat)">
-                    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" width="12" height="12">
-                      <path d="M2 3.5h10M5 3.5V2h4v1.5M3 3.5l.75 8h6.5L11 3.5" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M5.5 6v3.5M8.5 6v3.5" stroke-linecap="round"/>
-                    </svg>
-                    删除
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div v-else class="empty-state">
-          <div class="empty-visual">
-            <svg viewBox="0 0 96 80" fill="none" width="96" height="80">
-              <rect x="14" y="8" width="52" height="58" rx="5" fill="#eef1fb" stroke="#d0d8f3" stroke-width="1.5"/>
-              <rect x="22" y="20" width="22" height="3" rx="1.5" fill="#bcc6ee"/>
-              <rect x="22" y="29" width="34" height="3" rx="1.5" fill="#ccd3f0"/>
-              <rect x="22" y="38" width="28" height="3" rx="1.5" fill="#ccd3f0"/>
-              <rect x="22" y="47" width="18" height="3" rx="1.5" fill="#ccd3f0"/>
-              <circle cx="68" cy="60" r="18" fill="#4f6ef7"/>
-              <rect x="61" y="58.75" width="14" height="2.5" rx="1.25" fill="white"/>
-              <rect x="66.75" y="52" width="2.5" height="16" rx="1.25" fill="white"/>
-            </svg>
+      <div class="cat-layout" v-loading="loading">
+        <!-- 左侧：一级分类列表 -->
+        <div class="l1-panel">
+          <div class="panel-title panel-title-l1">
+            <span>一级分类</span>
+            <span v-if="!budgetOnly && visibleL1Categories.length > 1" class="panel-drag-hint">可上下拖拽排序</span>
           </div>
-          <p class="empty-title">暂无分类</p>
-          <p class="empty-desc">点击右上角「新建分类」开始创建</p>
+          <div
+            v-for="cat in visibleL1Categories"
+            :key="cat.id"
+            class="l1-item"
+            :class="{
+              active: selectedL1Id === cat.id,
+              dragging: draggingL1Id === cat.id,
+              'drag-over-before': dragOverL1Id === cat.id && dragOverPosition === 'before',
+              'drag-over-after': dragOverL1Id === cat.id && dragOverPosition === 'after',
+            }"
+            :draggable="!budgetOnly && !savingL1Order && visibleL1Categories.length > 1"
+            @dragstart="onL1DragStart($event, cat.id)"
+            @dragover.prevent="onL1DragOver($event, cat.id)"
+            @drop.prevent="onL1Drop($event, cat.id)"
+            @dragend="onL1DragEnd"
+            @click="selectedL1Id = cat.id"
+          >
+            <span class="cat-dot" :style="{ background: getCategoryColor(cat.name) }"></span>
+            <span class="l1-name">{{ cat.name }}</span>
+            <span v-if="isCategoryWithAssetRecord(cat.id)" class="asset-flag">资产</span>
+            <span class="l1-count" v-if="getVisibleChildren(cat.id).length">{{ getVisibleChildren(cat.id).length }}</span>
+            <div class="l1-actions">
+              <button class="icon-btn" title="移动为子分类" @click.stop="handleMoveCategory(cat)">
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" width="12" height="12">
+                  <path d="M7 2v10M7 12l-3-3M7 12l3-3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button class="icon-btn" title="重命名" @click.stop="handleRenameCategory(cat)">
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" width="12" height="12">
+                  <path d="M9.5 1.5L12.5 4.5L5 12H2V9L9.5 1.5Z" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button class="icon-btn danger" title="删除" @click.stop="handleDeleteCategory(cat)">
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" width="12" height="12">
+                  <path d="M2 3.5h10M5 3.5V2h4v1.5M3 3.5l.75 8h6.5L11 3.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div v-if="!visibleL1Categories.length" class="l1-empty">{{ budgetOnly ? '暂无已设置预算的分类' : '暂无一级分类' }}</div>
+        </div>
+
+        <!-- 右侧：子分类 + 日预算 -->
+        <div class="l2-panel">
+          <div v-if="!selectedL1" class="l2-empty">请先在左侧选择一级分类</div>
+          <div v-else>
+            <table class="data-table" v-if="currentChildren.length">
+              <thead>
+                <tr>
+                  <th class="name-col">子分类名称</th>
+                  <th class="budget-col">日预算（元/天）</th>
+                  <th class="actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="child in currentChildren" :key="child.id">
+                  <td class="name-col">
+                    <div class="cat-name-row">
+                      <span class="cat-dot" :style="{ background: getCategoryColor(child.name) }"></span>
+                      <span class="cat-name">{{ child.name }}</span>
+                      <span v-if="isCategoryWithAssetRecord(child.id)" class="asset-flag">资产</span>
+                    </div>
+                  </td>
+                  <td class="budget-col">
+                    <span v-if="hasBudget(child)" class="budget-badge">
+                      ¥{{ formatBudget(child.daily_budget) }}<span class="budget-unit">/天</span>
+                    </span>
+                    <span v-else class="no-budget">未设置</span>
+                  </td>
+                  <td class="actions-col">
+                    <div class="action-btns">
+                      <button class="action-btn" @click="handleMoveCategory(child)">移动</button>
+                      <button class="action-btn" @click="handleRenameCategory(child)">重命名</button>
+                      <button class="action-btn budget" @click="handleSetBudget(child)">预算</button>
+                      <button class="action-btn danger" @click="handleDeleteCategory(child)">删除</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div v-else class="l2-empty">
+              <p>{{ budgetOnly ? '当前分类下暂无已设置预算的子分类' : '该分类暂无子分类' }}</p>
+              <button v-if="!budgetOnly" class="btn-link" @click="handleAddCategory(selectedL1Id)">+ 添加子分类</button>
+            </div>
+
+            <!-- 一级分类本身的日预算设置 -->
+            <div class="l1-budget-row">
+              <span class="l1-budget-label">「{{ selectedL1.name }}」自身日预算：</span>
+              <span v-if="hasBudget(selectedL1)" class="budget-badge">
+                ¥{{ formatBudget(selectedL1.daily_budget) }}/天
+              </span>
+              <span v-else class="no-budget">未设置</span>
+              <button class="action-btn budget" style="margin-left:12px" @click="handleSetBudget(selectedL1)">设置</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -138,22 +181,49 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createCategory, deleteCategory, getAssets, getCategories, updateCategory } from '../api'
 
 const categories = ref([])
-const assetsByCategory = ref({})
+const assetCategoryIdSet = ref(new Set())
 const loading = ref(false)
+const selectedL1Id = ref(null)
+const budgetOnly = ref(false)
+const draggingL1Id = ref(null)
+const dragOverL1Id = ref(null)
+const dragOverPosition = ref('before')
+const savingL1Order = ref(false)
+
+const l1Categories = computed(() => categories.value.filter((c) => !c.parent_id))
+const l2TotalCount = computed(() => categories.value.filter((c) => c.parent_id).length)
+const budgetConfiguredCount = computed(() => categories.value.filter((cat) => hasBudget(cat)).length)
+const visibleL1Categories = computed(() => {
+  if (!budgetOnly.value) return l1Categories.value
+  return l1Categories.value.filter((cat) => hasBudget(cat) || getChildren(cat.id).some((child) => hasBudget(child)))
+})
+
+const selectedL1 = computed(() => visibleL1Categories.value.find((c) => c.id === selectedL1Id.value) || null)
+const currentChildren = computed(() => getVisibleChildren(selectedL1Id.value))
+
+function getChildren(parentId) {
+  if (!parentId) return []
+  return categories.value.filter((c) => c.parent_id === parentId)
+}
+
+function getVisibleChildren(parentId) {
+  const children = getChildren(parentId)
+  return budgetOnly.value ? children.filter((child) => hasBudget(child)) : children
+}
+
+function isCategoryWithAssetRecord(categoryId) {
+  if (!categoryId) return false
+  if (assetCategoryIdSet.value.has(categoryId)) return true
+  const children = getChildren(categoryId)
+  return children.some((child) => assetCategoryIdSet.value.has(child.id))
+}
 
 const categoryNames = computed(() => new Set(categories.value.map((x) => x.name.trim())))
-const totalCategoryCount = computed(() => categories.value.length)
-const totalAssetLinkedCount = computed(() =>
-  Object.values(assetsByCategory.value).reduce((sum, count) => sum + Number(count || 0), 0)
-)
-const budgetConfiguredCount = computed(() =>
-  categories.value.filter((cat) => hasBudget(cat)).length
-)
 
 const CATEGORY_COLORS = ['#4f6ef7', '#7c5cfc', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899']
 
@@ -165,10 +235,6 @@ function getCategoryColor(name) {
   return CATEGORY_COLORS[Math.abs(hash) % CATEGORY_COLORS.length]
 }
 
-function usageCount(categoryId) {
-  return assetsByCategory.value[categoryId] || 0
-}
-
 function hasBudget(category) {
   return category.daily_budget !== null && category.daily_budget !== undefined && category.daily_budget !== ''
 }
@@ -177,16 +243,20 @@ function formatBudget(value) {
   return Number(value).toFixed(2)
 }
 
+function toggleBudgetOnly() {
+  budgetOnly.value = !budgetOnly.value
+}
+
 async function loadData() {
   loading.value = true
   try {
-    const [categoryRes, assetsRes] = await Promise.all([getCategories(), getAssets()])
-    categories.value = categoryRes.data
-    const usage = {}
-    for (const item of assetsRes.data) {
-      usage[item.category_id] = (usage[item.category_id] || 0) + 1
+    const [catRes, assetRes] = await Promise.all([getCategories(), getAssets()])
+    categories.value = catRes.data
+    assetCategoryIdSet.value = new Set(assetRes.data.map((row) => row.category_id).filter(Boolean))
+    // 默认选中第一个一级分类
+    if (!selectedL1Id.value && l1Categories.value.length) {
+      selectedL1Id.value = l1Categories.value[0].id
     }
-    assetsByCategory.value = usage
   } catch (error) {
     console.error(error)
     ElMessage.error('设置数据加载失败，请稍后重试')
@@ -195,10 +265,12 @@ async function loadData() {
   }
 }
 
-async function handleAddCategory() {
+async function handleAddCategory(parentId) {
+  const title = parentId ? '新建子分类' : '新建一级分类'
+  const placeholder = parentId ? '例如：三餐' : '例如：餐饮'
   try {
-    const { value } = await ElMessageBox.prompt('请输入分类名称', '新建分类', {
-      inputPlaceholder: '例如：平板电脑',
+    const { value } = await ElMessageBox.prompt('请输入分类名称', title, {
+      inputPlaceholder: placeholder,
       confirmButtonText: '创建',
       cancelButtonText: '取消',
       inputValidator: (raw) => {
@@ -210,9 +282,10 @@ async function handleAddCategory() {
       },
     })
 
-    await createCategory({ name: value.trim() })
+    await createCategory({ name: value.trim(), parent_id: parentId || null })
     ElMessage.success('分类已创建')
     await loadData()
+    if (parentId) selectedL1Id.value = parentId
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     console.error(error)
@@ -281,15 +354,66 @@ async function handleSetBudget(category) {
   }
 }
 
-async function handleDeleteCategory(category) {
-  const used = usageCount(category.id)
-  if (used > 0) {
-    ElMessage.warning(`该分类下还有 ${used} 条资产，无法删除`)
-    return
-  }
+async function handleMoveCategory(category) {
+  // Build options: all L1 categories except itself (and its children)
+  const childIds = new Set(getChildren(category.id).map((c) => c.id))
+  const options = [
+    { label: '— 设为一级分类 —', value: null },
+    ...l1Categories.value
+      .filter((c) => c.id !== category.id && !childIds.has(c.id))
+      .map((c) => ({ label: c.name, value: String(c.id) })),
+  ]
+
+  const currentParent = category.parent_id
+    ? l1Categories.value.find((c) => c.id === category.parent_id)
+    : null
+  const currentLabel = currentParent ? currentParent.name : '一级分类（无父分类）'
 
   try {
-    await ElMessageBox.confirm(`确认删除分类"${category.name}"？`, '删除分类', {
+    const { value } = await ElMessageBox.prompt(
+      `当前所属：${currentLabel}\n请输入目标一级分类名称，或留空设为一级分类。\n\n可选：${options.map((o) => o.label).join('、')}`,
+      `移动「${category.name}」`,
+      {
+        inputPlaceholder: '目标一级分类名称，留空 = 设为一级分类',
+        confirmButtonText: '移动',
+        cancelButtonText: '取消',
+        inputValidator: (raw) => {
+          const v = (raw || '').trim()
+          if (!v) return true // empty = set as L1
+          const target = l1Categories.value.find((c) => c.name === v)
+          if (!target) return '未找到该一级分类'
+          if (target.id === category.id) return '不能移动到自身'
+          if (childIds.has(target.id)) return '不能移动到自己的子分类下'
+          return true
+        },
+      }
+    )
+
+    const targetName = (value || '').trim()
+    let newParentId = null
+    if (targetName) {
+      const target = l1Categories.value.find((c) => c.name === targetName)
+      if (target) newParentId = target.id
+    }
+
+    if (newParentId === category.parent_id) {
+      ElMessage.info('未变更')
+      return
+    }
+
+    await updateCategory(category.id, { parent_id: newParentId })
+    ElMessage.success('分类已移动')
+    await loadData()
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    console.error(error)
+    ElMessage.error(error?.response?.data?.detail || '移动失败')
+  }
+}
+
+async function handleDeleteCategory(category) {
+  try {
+    await ElMessageBox.confirm(`确认删除分类「${category.name}」？`, '删除分类', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning',
@@ -301,6 +425,7 @@ async function handleDeleteCategory(category) {
   try {
     await deleteCategory(category.id)
     ElMessage.success('分类已删除')
+    if (selectedL1Id.value === category.id) selectedL1Id.value = null
     await loadData()
   } catch (error) {
     console.error(error)
@@ -308,17 +433,122 @@ async function handleDeleteCategory(category) {
   }
 }
 
+function clearL1DragState() {
+  draggingL1Id.value = null
+  dragOverL1Id.value = null
+  dragOverPosition.value = 'before'
+}
+
+function onL1DragStart(event, categoryId) {
+  if (savingL1Order.value || l1Categories.value.length <= 1) {
+    event.preventDefault()
+    return
+  }
+  draggingL1Id.value = categoryId
+  dragOverL1Id.value = categoryId
+  dragOverPosition.value = 'before'
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.dropEffect = 'move'
+    event.dataTransfer.setData('text/plain', String(categoryId))
+  }
+}
+
+function onL1DragOver(event, targetId) {
+  if (!draggingL1Id.value || draggingL1Id.value === targetId) return
+  const row = event.currentTarget
+  if (!row) return
+  const rect = row.getBoundingClientRect()
+  dragOverPosition.value = event.clientY > rect.top + rect.height / 2 ? 'after' : 'before'
+  dragOverL1Id.value = targetId
+}
+
+async function onL1Drop(event, targetId) {
+  if (!draggingL1Id.value || savingL1Order.value) return
+  const draggedId = draggingL1Id.value
+  const orderIds = l1Categories.value.map((cat) => cat.id)
+  const fromIndex = orderIds.indexOf(draggedId)
+  const toIndex = orderIds.indexOf(targetId)
+  if (fromIndex === -1 || toIndex === -1) {
+    clearL1DragState()
+    return
+  }
+
+  let insertIndex = toIndex + (dragOverPosition.value === 'after' ? 1 : 0)
+  if (fromIndex < insertIndex) insertIndex -= 1
+  if (fromIndex === insertIndex) {
+    clearL1DragState()
+    return
+  }
+
+  orderIds.splice(fromIndex, 1)
+  orderIds.splice(insertIndex, 0, draggedId)
+  await persistL1Order(orderIds)
+  clearL1DragState()
+}
+
+function onL1DragEnd() {
+  clearL1DragState()
+}
+
+async function persistL1Order(orderIds) {
+  const l1Map = new Map(l1Categories.value.map((cat) => [cat.id, cat]))
+  const nextSortOrder = new Map()
+  const updates = []
+
+  orderIds.forEach((id, index) => {
+    nextSortOrder.set(id, index)
+    const cat = l1Map.get(id)
+    if (cat && cat.sort_order !== index) {
+      updates.push(updateCategory(id, { sort_order: index }))
+    }
+  })
+
+  if (!updates.length) return
+
+  const previous = categories.value.map((cat) => ({ ...cat }))
+  categories.value = categories.value
+    .map((cat) => (nextSortOrder.has(cat.id) ? { ...cat, sort_order: nextSortOrder.get(cat.id) } : cat))
+    .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
+
+  savingL1Order.value = true
+  try {
+    await Promise.all(updates)
+    await loadData()
+    ElMessage.success('一级分类顺序已更新')
+  } catch (error) {
+    categories.value = previous
+    console.error(error)
+    ElMessage.error(error?.response?.data?.detail || '更新排序失败')
+  } finally {
+    savingL1Order.value = false
+  }
+}
+
+watch(
+  visibleL1Categories,
+  (list) => {
+    if (!list.length) {
+      selectedL1Id.value = null
+      return
+    }
+    if (!selectedL1Id.value || !list.some((cat) => cat.id === selectedL1Id.value)) {
+      selectedL1Id.value = list[0].id
+    }
+  },
+  { immediate: true }
+)
+
 onMounted(loadData)
 </script>
 
 <style scoped>
-/* ── 页面整体布局 ── */
 .settings-page {
   width: 100%;
   max-width: 1080px;
+  margin: 0 auto;
 }
 
-/* ── 模块卡片 ── */
 .module-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -337,10 +567,7 @@ onMounted(loadData)
   background: linear-gradient(135deg, rgba(79, 110, 247, 0.04) 0%, transparent 55%);
 }
 
-.header-main {
-  min-width: 0;
-  flex: 1;
-}
+.header-main { min-width: 0; flex: 1; }
 
 .module-tag {
   display: inline-block;
@@ -370,7 +597,6 @@ onMounted(loadData)
   line-height: 1.55;
 }
 
-/* ── KPI 统计条 ── */
 .kpi-row {
   margin-top: 14px;
   display: flex;
@@ -389,6 +615,23 @@ onMounted(loadData)
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
+.kpi-chip-clickable {
+  cursor: pointer;
+  user-select: none;
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+
+.kpi-chip-clickable:hover {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.kpi-chip-clickable.active {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.1);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.18);
+}
+
 .kpi-icon-box {
   width: 32px;
   height: 32px;
@@ -401,66 +644,203 @@ onMounted(loadData)
   flex-shrink: 0;
 }
 
-.kpi-body {
+.kpi-body { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.kpi-num { font-size: 18px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1; }
+.kpi-label { font-size: 11px; color: var(--text-muted); line-height: 1; }
+
+.header-actions {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-.kpi-num {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.kpi-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1;
-}
-
-/* ── 主按钮 ── */
-.btn-primary {
+.btn-primary, .btn-secondary {
   border: none;
-  background: var(--accent-gradient);
-  color: #fff;
   border-radius: var(--radius-sm);
-  height: 38px;
-  padding: 0 16px;
-  font-size: 13.5px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: filter var(--transition), transform var(--transition), box-shadow var(--transition);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
+  transition: filter var(--transition), transform var(--transition);
+}
+
+.btn-primary {
+  background: var(--accent-gradient);
+  color: #fff;
   box-shadow: 0 3px 10px rgba(79, 110, 247, 0.28);
 }
+.btn-primary:hover { filter: brightness(1.07); transform: translateY(-1px); }
 
-.btn-primary:hover {
-  filter: brightness(1.07);
-  transform: translateY(-1px);
-  box-shadow: 0 5px 16px rgba(79, 110, 247, 0.38);
+.btn-secondary {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+
+/* Two-panel layout */
+.cat-layout {
+  display: flex;
+  min-height: 320px;
 }
 
-/* ── 表格 ── */
-.table-wrap {
-  overflow-x: auto;
+.l1-panel {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
+  padding: 12px 0;
+  background: #fafbfd;
 }
 
+.l2-panel {
+  flex: 1;
+  padding: 16px 20px;
+  min-width: 0;
+}
+
+.panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 0 16px 10px;
+}
+
+.panel-title-l1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel-drag-hint {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.l1-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px 9px 16px;
+  cursor: pointer;
+  transition: background var(--transition);
+  border-radius: 0;
+  position: relative;
+  user-select: none;
+}
+
+.l1-item[draggable='true'] {
+  cursor: grab;
+}
+
+.l1-item.dragging {
+  opacity: 0.56;
+}
+
+.l1-item.drag-over-before::before,
+.l1-item.drag-over-after::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 12px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.l1-item.drag-over-before::before {
+  top: 0;
+}
+
+.l1-item.drag-over-after::after {
+  bottom: 0;
+}
+
+.l1-item:hover { background: rgba(79, 110, 247, 0.05); }
+.l1-item.active {
+  background: var(--accent-light);
+  border-right: 3px solid var(--accent);
+}
+.l1-item.active .l1-name { color: var(--accent); font-weight: 700; }
+
+.l1-name {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.l1-count {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(79, 110, 247, 0.1);
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.l1-actions {
+  display: none;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.l1-item:hover .l1-actions { display: flex; }
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  transition: color var(--transition), background var(--transition);
+}
+.icon-btn:hover { color: var(--accent); background: var(--accent-light); }
+.icon-btn.danger:hover { color: var(--danger); background: var(--danger-light); }
+.l1-empty, .l2-empty {
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 6px;
+  font-weight: 500;
+}
+.btn-link:hover { text-decoration: underline; }
+
+/* Sub-category table */
 .data-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  min-width: 560px;
 }
 
 .data-table th {
-  padding: 11px 16px;
+  padding: 9px 12px;
   font-size: 11px;
   font-weight: 700;
   color: var(--text-secondary);
@@ -472,134 +852,56 @@ onMounted(loadData)
 }
 
 .data-table td {
-  padding: 12px 16px;
-  font-size: 14px;
+  padding: 10px 12px;
+  font-size: 13.5px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
   vertical-align: middle;
 }
 
-.data-table tbody tr {
-  transition: background var(--transition);
-}
+.data-table tbody tr:hover { background: #f5f8ff; }
 
-.data-table tbody tr:hover {
-  background: #f5f8ff;
-}
-
-.data-table tr:last-child td {
-  border-bottom: none;
-}
-
-/* 列宽 */
-.order-col  { width: 60px; text-align: center; }
 .name-col   { width: auto; }
-.qty-col    { width: 110px; }
-.budget-col { width: 168px; }
-.actions-col { width: 220px; }
+.budget-col { width: 160px; }
+.actions-col { width: 200px; text-align: center; }
+.data-table th.actions-col, .data-table td.actions-col { text-align: center; }
 
-.data-table th.order-col,
-.data-table td.order-col {
-  text-align: center;
-  padding-left: 0;
-  padding-right: 0;
-}
-
-.data-table th.actions-col,
-.data-table td.actions-col {
-  text-align: center;
-}
-
-/* ── 单元格元素 ── */
-.order-badge {
+.cat-name-row { display: flex; align-items: center; gap: 9px; }
+.cat-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
+.cat-name { font-size: 13.5px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.asset-flag {
   display: inline-flex;
-  width: 26px;
-  height: 26px;
   align-items: center;
   justify-content: center;
+  height: 18px;
+  padding: 0 6px;
   border-radius: 999px;
-  background: #eef2ff;
-  color: #3f5bd0;
-  font-size: 11px;
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  font-size: 10px;
   font-weight: 700;
-}
-
-.cat-name-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.cat-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
+  letter-spacing: 0.2px;
   flex-shrink: 0;
-}
-
-.cat-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.count-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 26px;
-  min-width: 58px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border-color);
-  background: #fff;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.count-badge.active {
-  border-color: rgba(79, 110, 247, 0.22);
-  background: rgba(79, 110, 247, 0.06);
-  color: #3551cf;
 }
 
 .budget-badge {
   display: inline-flex;
   align-items: baseline;
   gap: 2px;
-  padding: 4px 10px;
+  padding: 3px 9px;
   background: rgba(16, 185, 129, 0.08);
   color: #059669;
   border-radius: 999px;
   border: 1px solid rgba(16, 185, 129, 0.22);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+.budget-unit { font-size: 11px; font-weight: 500; opacity: 0.65; }
+.no-budget { font-size: 13px; color: var(--text-muted); }
 
-.budget-unit {
-  font-size: 11px;
-  font-weight: 500;
-  opacity: 0.65;
-}
-
-.no-budget {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-/* ── 操作按钮 ── */
-.action-btns {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-}
+.action-btns { display: flex; align-items: center; justify-content: center; gap: 4px; }
 
 .action-btn {
   display: inline-flex;
@@ -608,77 +910,28 @@ onMounted(loadData)
   border: 1px solid var(--border-color);
   background: transparent;
   color: var(--text-secondary);
-  border-radius: 8px;
-  height: 28px;
-  padding: 0 10px;
-  font-size: 12px;
+  border-radius: 7px;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition);
   white-space: nowrap;
 }
-
-.action-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-light);
-}
-
-.action-btn.budget:hover {
-  border-color: #059669;
-  color: #059669;
-  background: rgba(16, 185, 129, 0.07);
-}
-
-.action-btn.danger:hover {
-  border-color: var(--danger);
-  color: var(--danger);
-  background: var(--danger-light);
-}
-
-/* ── 空状态 ── */
-.empty-state {
-  padding: 56px 24px;
-  text-align: center;
-}
-
-.empty-visual {
-  margin: 0 auto 16px;
+.action-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+.action-btn.budget:hover { border-color: #059669; color: #059669; background: rgba(16, 185, 129, 0.07); }
+.action-btn.danger:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-light); }
+/* L1 budget row */
+.l1-budget-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-}
-
-.empty-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-}
-
-.empty-desc {
+  gap: 8px;
+  margin-top: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
   font-size: 13px;
-  color: var(--text-muted);
+  flex-wrap: wrap;
 }
-
-/* ── 响应式 ── */
-@media (max-width: 860px) {
-  .settings-page {
-    width: 100%;
-  }
-
-  .module-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .btn-primary {
-    align-self: stretch;
-    justify-content: center;
-  }
-
-  .actions-col {
-    width: 200px;
-  }
-}
+.l1-budget-label { color: var(--text-secondary); }
 </style>

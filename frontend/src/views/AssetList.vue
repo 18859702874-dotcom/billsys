@@ -60,8 +60,12 @@
             <th style="text-align: right">回收金额</th>
             <th>购买日期</th>
             <th style="text-align: center">使用天数</th>
-            <th style="text-align: right">平均每日费用</th>
-            <th style="text-align: left">综合日成本</th>
+            <th style="text-align: right">
+              <span :title="dailyCostColumnHint">实际日费用</span>
+            </th>
+            <th style="text-align: left">
+              <span :title="comprehensiveCostColumnHint">综合日成本</span>
+            </th>
             <th>弃用原因</th>
             <th style="text-align: center">操作</th>
           </tr>
@@ -88,13 +92,14 @@
               <div v-if="row.expected_days" class="days-sub">预计 {{ row.expected_days }} 天</div>
             </td>
             <td style="text-align: right">
-              <span v-if="row.status === 'active'">
-                {{ formatDailyCost(row.daily_cost) }}
-              </span>
-              <span v-else>-</span>
+              <span :title="dailyCostHint(row)">{{ formatDailyCost(row.daily_cost) }}</span>
             </td>
             <td style="text-align: left">
-              <span class="daily-cost" :class="{ 'cost-warn': row.expected_days && row.days_used < row.expected_days }" :title="isEstimated(row) ? '预估费用（基于预计使用天数）' : ''">
+              <span
+                class="daily-cost"
+                :class="{ 'cost-warn': row.expected_days && row.days_used < row.expected_days }"
+                :title="comprehensiveCostHint(row)"
+              >
                 {{ formatDailyCost(comprehensiveCost(row)) }}
               </span>
             </td>
@@ -166,6 +171,10 @@
               前往「设置」为各分类配置预算
             </div>
           </template>
+          <div class="summary-rule-note">
+            说明：当实际使用天数超过预计使用天数时，综合日成本按 0 计；
+            卡片行内显示实际日费用（净成本/使用天数）。
+          </div>
         </div>
         <div v-if="totalBudget > 0" class="summary-bar-wrap">
           <div class="summary-bar">
@@ -227,8 +236,15 @@
             >
               <div class="cat-asset-top">
                 <span class="cat-asset-name">{{ asset.name }}</span>
-                <span class="cat-asset-cost" :class="{ 'cost-estimated': isEstimated(asset) }">
-                  ¥{{ comprehensiveCost(asset).toFixed(2) }}/天
+                <span
+                  class="cat-asset-cost"
+                  :class="{
+                    'cost-estimated': isEstimated(asset),
+                    'cost-fallback': isCardCostFallback(asset),
+                  }"
+                  :title="cardCostHint(asset)"
+                >
+                  ¥{{ cardCostDisplay(asset).toFixed(2) }}/天
                 </span>
               </div>
               <div v-if="asset.expected_days" class="asset-prog-bar">
@@ -313,6 +329,17 @@ const cardAssets = ref([])
 const cardLoading = ref(false)
 
 const catColors = ['#4f6ef7', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
+const dailyCostColumnHint = [
+  '实际日费用计算规则',
+  '净成本 = 购买价格 - 回收金额（下限 0）',
+  '实际日费用 = 净成本 / 使用天数',
+].join('\n')
+const comprehensiveCostColumnHint = [
+  '综合日成本规则',
+  '1) 在用且超预计天数 => 0',
+  '2) 其他情况 => min(实际日费用, 预估日费用)',
+  '3) 弃置资产不触发归零',
+].join('\n')
 
 function getCatColor(catName) {
   const idx = categories.value.findIndex((c) => c.name === catName)
@@ -324,7 +351,14 @@ function catTagStyle(catName) {
   return { background: color + '18', color }
 }
 
+function isExceededExpectedForActive(row) {
+  return row.status !== 'disposed' && row.expected_days && row.days_used > row.expected_days
+}
+
 function comprehensiveCost(row) {
+  if (isExceededExpectedForActive(row)) {
+    return 0
+  }
   const actual = Number(row.daily_cost || 0)
   const estimated = Number(row.estimated_daily_cost || 0)
   if (row.status === 'disposed' || !estimated || actual <= estimated) {
@@ -334,9 +368,23 @@ function comprehensiveCost(row) {
 }
 
 function isEstimated(row) {
+  if (isExceededExpectedForActive(row)) {
+    return false
+  }
   const actual = Number(row.daily_cost || 0)
   const estimated = Number(row.estimated_daily_cost || 0)
   return row.status !== 'disposed' && estimated && actual > estimated
+}
+
+function isCardCostFallback(row) {
+  return isExceededExpectedForActive(row) && comprehensiveCost(row) <= 0
+}
+
+function cardCostDisplay(row) {
+  if (isCardCostFallback(row)) {
+    return Number(row.daily_cost || 0)
+  }
+  return comprehensiveCost(row)
 }
 
 function assetProgressClass(asset) {
@@ -387,6 +435,87 @@ function formatDailyCost(cost) {
   return `¥${Number(cost || 0).toFixed(2)}/天`
 }
 
+function dailyCostHint(row) {
+  const net = Number(row.net_cost || 0)
+  const days = Number(row.days_used || 0)
+  const daily = Number(row.daily_cost || 0)
+  return [
+    '实际日费用计算',
+    '公式：净成本 / 使用天数',
+    `净成本：¥${net.toFixed(2)}`,
+    `使用天数：${days}天`,
+    `结果：¥${daily.toFixed(2)}/天`,
+  ].join('\n')
+}
+
+function comprehensiveCostHint(row) {
+  const actual = Number(row.daily_cost || 0)
+  const estimated = Number(row.estimated_daily_cost || 0)
+  const comp = Number(comprehensiveCost(row) || 0)
+
+  if (isExceededExpectedForActive(row)) {
+    return [
+      '命中归零规则',
+      '条件：在用且超预计天数',
+      `当前：${row.days_used}/${row.expected_days}天`,
+      '综合日成本：¥0.00/天',
+    ].join('\n')
+  }
+
+  if (!estimated) {
+    return [
+      '未设置预计使用天数',
+      '综合日成本采用实际日费用',
+      `结果：¥${actual.toFixed(2)}/天`,
+    ].join('\n')
+  }
+
+  if (row.status === 'disposed') {
+    if (actual > estimated) {
+      return [
+        '资产已弃置，不触发归零',
+        '综合日成本取较小值（预估）',
+        `实际：¥${actual.toFixed(2)}/天`,
+        `预估：¥${estimated.toFixed(2)}/天`,
+        `结果：¥${comp.toFixed(2)}/天`,
+      ].join('\n')
+    }
+    return [
+      '资产已弃置，不触发归零',
+      '综合日成本采用实际日费用',
+      `实际：¥${actual.toFixed(2)}/天`,
+      `预估：¥${estimated.toFixed(2)}/天`,
+      `结果：¥${comp.toFixed(2)}/天`,
+    ].join('\n')
+  }
+
+  if (actual > estimated) {
+    return [
+      '综合日成本取较小值（预估）',
+      `实际：¥${actual.toFixed(2)}/天`,
+      `预估：¥${estimated.toFixed(2)}/天`,
+      `结果：¥${comp.toFixed(2)}/天`,
+    ].join('\n')
+  }
+  return [
+    '综合日成本采用实际日费用',
+    `实际：¥${actual.toFixed(2)}/天`,
+    `预估：¥${estimated.toFixed(2)}/天`,
+    `结果：¥${comp.toFixed(2)}/天`,
+  ].join('\n')
+}
+
+function cardCostHint(row) {
+  if (isCardCostFallback(row)) {
+    return [
+      '综合日成本按规则为 ¥0.00/天',
+      '条件：在用且超预计天数',
+      `卡片显示实际日费用：¥${Number(row.daily_cost || 0).toFixed(2)}/天`,
+    ].join('\n')
+  }
+  return comprehensiveCostHint(row)
+}
+
 // Cards view computed
 const categoryStats = computed(() => {
   return categories.value
@@ -408,7 +537,7 @@ const overallDailyCost = computed(() =>
 )
 
 const totalBudget = computed(() =>
-  categories.value.reduce((sum, cat) => sum + (Number(cat.daily_budget) || 0), 0)
+  categoryStats.value.reduce((sum, cat) => sum + (Number(cat.daily_budget) || 0), 0)
 )
 
 async function load() {
@@ -810,6 +939,7 @@ onMounted(async () => {
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   padding: 20px 24px;
+  position: relative;
 }
 .summary-banner.over-budget {
   border-color: rgba(239, 68, 68, 0.3);
@@ -821,6 +951,17 @@ onMounted(async () => {
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+.summary-rule-note {
+  position: absolute;
+  top: 14px;
+  right: 24px;
+  max-width: 520px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-align: right;
 }
 
 .summary-block {
@@ -912,7 +1053,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  height: 280px;
+  height: 300px;
   overflow: hidden;
   transition: box-shadow var(--transition), transform var(--transition);
 }
@@ -1073,6 +1214,14 @@ onMounted(async () => {
 .cat-asset-cost.cost-estimated {
   color: #f59e0b;
 }
+.cat-asset-cost.cost-fallback {
+  color: #fff;
+  background: #7b8598;
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 1.35;
+}
 
 .asset-prog-bar {
   display: flex;
@@ -1183,6 +1332,14 @@ onMounted(async () => {
 
   .cat-grid {
     grid-template-columns: 1fr;
+  }
+
+  .summary-rule-note {
+    position: static;
+    max-width: 100%;
+    font-size: 10px;
+    text-align: left;
+    margin-top: 2px;
   }
 }
 </style>
