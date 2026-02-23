@@ -2,7 +2,7 @@
   <div class="form-page">
     <div class="form-card">
       <div class="form-header">
-        <button class="back-btn" @click="$router.back()">
+        <button class="back-btn" @click="goBack()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
             <line x1="19" y1="12" x2="5" y2="12" />
             <polyline points="12 19 5 12 12 5" />
@@ -135,7 +135,7 @@
           </div>
 
           <div class="side-actions">
-            <button class="btn-secondary" @click="$router.back()">取消</button>
+            <button class="btn-secondary" @click="goBack()">取消</button>
             <button class="btn-primary" @click="submit">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                 <polyline points="20 6 9 17 4 12" />
@@ -296,6 +296,16 @@ async function submit() {
   } catch (error) {
     console.error(error)
     ElMessage.error('保存失败，请稍后重试')
+  }
+}
+
+function goBack() {
+  if (route.query.from === 'cards') {
+    router.push('/assets?view=cards')
+  } else if (window.history.state?.back) {
+    router.back()
+  } else {
+    router.push('/assets')
   }
 }
 

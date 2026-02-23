@@ -2,7 +2,6 @@
 import base64
 import json
 import os
-import uuid
 from datetime import date as date_type
 from decimal import Decimal, InvalidOperation
 from typing import Any, List, Optional
@@ -15,11 +14,10 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import ClothingItem
 from schemas import ClothingBatchCreateRequest, ClothingOut
+from services.storage import delete_by_url, upload_bytes
 
 router = APIRouter(prefix="/api/clothing", tags=["clothing"])
 
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "clothing")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 
 VALID_CATEGORIES = ["上衣", "下装", "外套", "鞋子", "配饰"]
@@ -131,8 +129,8 @@ def _normalize_items(parsed: Any, order: dict) -> list[dict]:
     return items
 
 def _build_model_candidates(env: dict) -> list[str]:
-    primary = (env.get("GEMINI_MODEL") or "gemini-2.5-flash-lite").strip()
-    fallback_raw = env.get("GEMINI_FALLBACK_MODELS") or "gemini-2.5-flash,gemini-2.0-flash-lite"
+    primary = (env.get("GEMINI_TEXT_MODEL") or env.get("GEMINI_MODEL") or "gemini-2.5-flash-lite").strip()
+    fallback_raw = env.get("GEMINI_TEXT_FALLBACK_MODELS") or env.get("GEMINI_FALLBACK_MODELS") or "gemini-2.5-flash,gemini-2.0-flash-lite"
     fallback = [m.strip() for m in fallback_raw.split(",") if m.strip()]
     merged: list[str] = []
     for model in [primary, *fallback]:
@@ -186,11 +184,11 @@ async def _call_gemini_with_retry(payload: dict, api_key: str, models: list[str]
 async def recognize_clothing(image: UploadFile = File(...)):
     """通过订单截图 AI 识别服装信息，支持多商品明细。"""
     env = dotenv_values(ENV_PATH)
-    api_key = env.get("GEMINI_API_KEY", "")
+    api_key = (env.get("GEMINI_TEXT_API_KEY") or env.get("GEMINI_API_KEY") or "").strip()
     models = _build_model_candidates(env)
 
     if not api_key or api_key == "your_gemini_api_key_here":
-        raise HTTPException(400, "请先在 backend/.env 中配置 GEMINI_API_KEY")
+        raise HTTPException(400, "请先在 backend/.env 中配置 GEMINI_TEXT_API_KEY 或 GEMINI_API_KEY")
 
     image_bytes = await image.read()
     b64_image = base64.b64encode(image_bytes).decode("utf-8")
@@ -313,12 +311,13 @@ def create_clothing(
 ):
     image_url = None
     if image and image.filename:
-        ext = os.path.splitext(image.filename)[1]
-        filename = f"{uuid.uuid4().hex}{ext}"
-        filepath = os.path.join(UPLOAD_DIR, filename)
-        with open(filepath, "wb") as f:
-            f.write(image.file.read())
-        image_url = f"/uploads/clothing/{filename}"
+        image_bytes = image.file.read()
+        image_url = upload_bytes(
+            folder="clothing",
+            filename=image.filename,
+            data=image_bytes,
+            content_type=image.content_type,
+        )
 
     item = ClothingItem(
         name=name,
@@ -390,18 +389,15 @@ def update_clothing(
     if not item:
         raise HTTPException(404, "服装不存在")
 
+    old_image_url = item.image_url
     if image and image.filename:
-        if item.image_url:
-            old_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), item.image_url.lstrip("/"))
-            if os.path.exists(old_path):
-                os.remove(old_path)
-
-        ext = os.path.splitext(image.filename)[1]
-        filename = f"{uuid.uuid4().hex}{ext}"
-        filepath = os.path.join(UPLOAD_DIR, filename)
-        with open(filepath, "wb") as f:
-            f.write(image.file.read())
-        item.image_url = f"/uploads/clothing/{filename}"
+        image_bytes = image.file.read()
+        item.image_url = upload_bytes(
+            folder="clothing",
+            filename=image.filename,
+            data=image_bytes,
+            content_type=image.content_type,
+        )
 
     fields = {
         "name": name,
@@ -422,6 +418,8 @@ def update_clothing(
 
     db.commit()
     db.refresh(item)
+    if image and image.filename and old_image_url and old_image_url != item.image_url:
+        delete_by_url(old_image_url)
     return item
 
 
@@ -431,14 +429,8 @@ def delete_clothing(item_id: int, db: Session = Depends(get_db)):
     if not item:
         raise HTTPException(404, "服装不存在")
 
-    if item.image_url:
-        filepath = os.path.join(os.path.dirname(os.path.dirname(__file__)), item.image_url.lstrip("/"))
-        if os.path.exists(filepath):
-            os.remove(filepath)
+    delete_by_url(item.image_url)
 
     db.delete(item)
     db.commit()
     return {"ok": True}
-
-
-

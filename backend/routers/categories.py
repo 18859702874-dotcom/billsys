@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import AssetCategory
-from schemas import CategoryCreate, CategoryOut
+from schemas import CategoryCreate, CategoryUpdate, CategoryOut
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
 
@@ -33,20 +33,23 @@ def create_category(data: CategoryCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{cat_id}", response_model=CategoryOut)
-def update_category(cat_id: int, data: CategoryCreate, db: Session = Depends(get_db)):
+def update_category(cat_id: int, data: CategoryUpdate, db: Session = Depends(get_db)):
     cat = db.query(AssetCategory).get(cat_id)
     if not cat:
         raise HTTPException(404, "分类不存在")
 
-    name = data.name.strip()
-    if not name:
-        raise HTTPException(400, "分类名称不能为空")
+    if data.name is not None:
+        name = data.name.strip()
+        if not name:
+            raise HTTPException(400, "分类名称不能为空")
+        exists = db.query(AssetCategory).filter(AssetCategory.name == name, AssetCategory.id != cat_id).first()
+        if exists:
+            raise HTTPException(400, "分类已存在")
+        cat.name = name
 
-    exists = db.query(AssetCategory).filter(AssetCategory.name == name, AssetCategory.id != cat_id).first()
-    if exists:
-        raise HTTPException(400, "分类已存在")
+    if "daily_budget" in data.model_fields_set:
+        cat.daily_budget = data.daily_budget
 
-    cat.name = name
     db.commit()
     db.refresh(cat)
     return cat

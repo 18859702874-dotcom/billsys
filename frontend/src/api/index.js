@@ -43,6 +43,7 @@ export const getOutfit = (id) => api.get(`/outfits/${id}`)
 export const createOutfit = (data) => api.post('/outfits', data)
 export const updateOutfit = (id, data) => api.put(`/outfits/${id}`, data)
 export const deleteOutfit = (id) => api.delete(`/outfits/${id}`)
+export const renderOutfitImage = (data) => api.post('/outfits/render-image', data)
 
 // --- TryOn ---
 export const submitTryOn = (formData) => api.post('/tryon', formData, {

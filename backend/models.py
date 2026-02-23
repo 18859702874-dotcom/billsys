@@ -8,6 +8,7 @@ class AssetCategory(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(50), nullable=False, unique=True)
+    daily_budget = Column(Numeric(10, 2), nullable=True)
 
     assets = relationship("Asset", back_populates="category")
 
@@ -61,6 +62,7 @@ class Outfit(Base):
     name = Column(String(100), nullable=False)
     occasion = Column(String(50), nullable=True)  # 日常/通勤/运动/约会/正式
     season = Column(String(20), nullable=True)
+    rendered_image_url = Column(String(512), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

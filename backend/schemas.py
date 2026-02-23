@@ -9,9 +9,15 @@ class CategoryCreate(BaseModel):
     name: str = Field(max_length=50)
 
 
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=50)
+    daily_budget: Optional[Decimal] = Field(default=None, ge=0)
+
+
 class CategoryOut(BaseModel):
     id: int
     name: str
+    daily_budget: Optional[Decimal] = None
     model_config = {"from_attributes": True}
 
 
@@ -158,6 +164,7 @@ class OutfitCreate(BaseModel):
     name: str = Field(max_length=100)
     occasion: Optional[str] = None
     season: Optional[str] = None
+    rendered_image_url: Optional[str] = None
     notes: Optional[str] = None
     items: list[OutfitItemIn] = []
 
@@ -166,6 +173,7 @@ class OutfitUpdate(BaseModel):
     name: Optional[str] = None
     occasion: Optional[str] = None
     season: Optional[str] = None
+    rendered_image_url: Optional[str] = None
     notes: Optional[str] = None
     items: Optional[list[OutfitItemIn]] = None
 
@@ -185,8 +193,26 @@ class OutfitOut(BaseModel):
     name: str
     occasion: Optional[str] = None
     season: Optional[str] = None
+    rendered_image_url: Optional[str] = None
     notes: Optional[str] = None
     items: list[OutfitItemOut] = []
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
+
+
+class OutfitRenderItemIn(BaseModel):
+    name: str = Field(max_length=100)
+    category: str = Field(max_length=30)
+    image_url: str = Field(min_length=1, max_length=512)
+
+
+class OutfitRenderRequest(BaseModel):
+    items: list[OutfitRenderItemIn] = Field(min_length=1, max_length=8)
+    prompt: Optional[str] = Field(default=None, max_length=1000)
+
+
+class OutfitRenderResponse(BaseModel):
+    image_url: str
+    model: str
+    text: Optional[str] = None

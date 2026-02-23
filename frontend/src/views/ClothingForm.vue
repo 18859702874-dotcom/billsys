@@ -489,6 +489,7 @@ async function handleSubmit() {
   }
 
   saving.value = true
+  let requestPromise
   try {
     const fd = new FormData()
     for (const [key, val] of Object.entries(form.value)) {
@@ -502,17 +503,25 @@ async function handleSubmit() {
     }
 
     if (isEdit.value) {
-      await updateClothing(route.params.id, fd)
-      ElMessage.success('更新成功')
+      requestPromise = updateClothing(route.params.id, fd)
+      ElMessage.success('已提交更新，后台处理中')
     } else {
-      await createClothing(fd)
-      ElMessage.success('添加成功')
+      requestPromise = createClothing(fd)
+      ElMessage.success('已提交添加，后台处理中')
     }
     router.push('/clothing')
-  } catch {
-    ElMessage.error('保存失败')
+  } catch (err) {
+    const msg = err?.response?.data?.detail || '保存失败'
+    ElMessage.error(msg)
   } finally {
     saving.value = false
+  }
+
+  if (requestPromise) {
+    requestPromise.catch((err) => {
+      const msg = err?.response?.data?.detail || '保存失败'
+      ElMessage.error(`后台保存失败：${msg}`)
+    })
   }
 }
 

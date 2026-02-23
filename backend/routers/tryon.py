@@ -1,12 +1,9 @@
-import os
 import uuid
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from services.storage import upload_bytes
 
 router = APIRouter(prefix="/api/tryon", tags=["tryon"])
-
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "tryon")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Store task results in memory (for demo; use DB/Redis in production)
 _tasks: dict = {}
@@ -25,12 +22,13 @@ async def create_tryon(
     TODO: Integrate with actual AI try-on API (e.g., Alibaba Cloud, Baidu, etc.)
     Currently returns a placeholder response.
     """
-    # Save person image
-    ext = os.path.splitext(person_image.filename)[1]
-    person_filename = f"{uuid.uuid4().hex}{ext}"
-    person_path = os.path.join(UPLOAD_DIR, person_filename)
-    with open(person_path, "wb") as f:
-        f.write(await person_image.read())
+    person_image_bytes = await person_image.read()
+    person_image_url = upload_bytes(
+        folder="tryon",
+        filename=person_image.filename,
+        data=person_image_bytes,
+        content_type=person_image.content_type,
+    )
 
     task_id = uuid.uuid4().hex
 
@@ -38,7 +36,7 @@ async def create_tryon(
     # For now, store as pending
     _tasks[task_id] = {
         "status": "pending",
-        "person_image": f"/uploads/tryon/{person_filename}",
+        "person_image": person_image_url,
         "clothing_image": clothing_image_url,
         "result_image": None,
         "message": "AI换装功能即将接入，敬请期待！",
